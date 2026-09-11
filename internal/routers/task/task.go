@@ -188,9 +188,12 @@ func Store(ctx *macaron.Context, form TaskForm) string {
 		for i, hostIdStr := range hostIdStrList {
 			hostIds[i], _ = strconv.Atoi(hostIdStr)
 		}
-		taskHostModel.Add(id, hostIds)
+		err = taskHostModel.Add(id, hostIds)
 	} else {
-		taskHostModel.Remove(id)
+		err = taskHostModel.Remove(id)
+	}
+	if err != nil {
+		return json.CommonFailure("保存任务主机失败", err)
 	}
 
 	status, _ := taskModel.GetStatus(id)

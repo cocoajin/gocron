@@ -41,6 +41,10 @@ export default {
 }
 </script>
 <style>
+  :root { --el-component-size: 40px; --el-color-primary: #409eff; --el-font-size-base: 14px; }
+  .el-select { width: 200px; }
+  .el-form-item { margin-bottom: 22px; }
+
   [v-cloak] {
     display: none !important;
   }

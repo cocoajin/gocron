@@ -2,18 +2,20 @@ package models
 
 import (
 	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
-	"time"
 
 	macaron "gopkg.in/macaron.v1"
 
-	_ "github.com/go-sql-driver/mysql"
-	"github.com/go-xorm/core"
-	"github.com/go-xorm/xorm"
-	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/ouqiang/gocron/internal/modules/app"
 	"github.com/ouqiang/gocron/internal/modules/logger"
 	"github.com/ouqiang/gocron/internal/modules/setting"
+	"xorm.io/xorm"
+	"xorm.io/xorm/log"
+	"xorm.io/xorm/names"
 )
 
 type Status int8
@@ -38,11 +40,6 @@ const (
 )
 
 const DefaultTimeFormat = "2006-01-02 15:04:05"
-
-const (
-	dbPingInterval = 90 * time.Second
-	dbMaxLiftTime  = 2 * time.Hour
-)
 
 type BaseModel struct {
 	Page     int `xorm:"-"`
@@ -70,74 +67,65 @@ func (model *BaseModel) pageLimitOffset() int {
 	return (model.Page - 1) * model.PageSize
 }
 
-// 创建Db
+// CreateDb opens the local database, failing before the scheduler starts on errors.
 func CreateDb() *xorm.Engine {
-	dsn := getDbEngineDSN(app.Setting)
-	engine, err := xorm.NewEngine(app.Setting.Db.Engine, dsn)
+	engine, err := CreateTmpDb(app.Setting)
 	if err != nil {
-		logger.Fatal("创建xorm引擎失败", err)
+		logger.Fatal("打开 SQLite 数据库失败", err)
 	}
-	engine.SetMaxIdleConns(app.Setting.Db.MaxIdleConns)
-	engine.SetMaxOpenConns(app.Setting.Db.MaxOpenConns)
-	engine.SetConnMaxLifetime(dbMaxLiftTime)
-
-	if app.Setting.Db.Prefix != "" {
-		// 设置表前缀
-		TablePrefix = app.Setting.Db.Prefix
-		mapper := core.NewPrefixMapper(core.SnakeMapper{}, app.Setting.Db.Prefix)
-		engine.SetTableMapper(mapper)
-	}
-	// 本地环境开启日志
+	TablePrefix = app.Setting.Db.Prefix
 	if macaron.Env == macaron.DEV {
 		engine.ShowSQL(true)
-		engine.Logger().SetLevel(core.LOG_DEBUG)
+		engine.Logger().SetLevel(log.LOG_DEBUG)
 	}
-
-	go keepDbAlived(engine)
-
 	return engine
 }
 
-// 创建临时数据库连接
-func CreateTmpDb(setting *setting.Setting) (*xorm.Engine, error) {
-	dsn := getDbEngineDSN(setting)
-
-	return xorm.NewEngine(setting.Db.Engine, dsn)
-}
-
-// 获取数据库引擎DSN  mysql,sqlite,postgres
-func getDbEngineDSN(setting *setting.Setting) string {
-	engine := strings.ToLower(setting.Db.Engine)
-	dsn := ""
-	switch engine {
-	case "mysql":
-		dsn = fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&allowNativePasswords=true",
-			setting.Db.User,
-			setting.Db.Password,
-			setting.Db.Host,
-			setting.Db.Port,
-			setting.Db.Database,
-			setting.Db.Charset)
-	case "postgres":
-		dsn = fmt.Sprintf("user=%s password=%s host=%s port=%d dbname=%s sslmode=disable",
-			setting.Db.User,
-			setting.Db.Password,
-			setting.Db.Host,
-			setting.Db.Port,
-			setting.Db.Database)
+// CreateTmpDb uses a single connection to serialize writes. WAL and busy_timeout
+// also allow SQLite readers and backup tools to access the file safely.
+func CreateTmpDb(s *setting.Setting) (*xorm.Engine, error) {
+	if s.Db.Engine != "sqlite3" && s.Db.Engine != "sqlite" {
+		return nil, fmt.Errorf("仅支持 SQLite，请使用 db.engine=sqlite3")
 	}
-
-	return dsn
-}
-
-func keepDbAlived(engine *xorm.Engine) {
-	t := time.Tick(dbPingInterval)
-	var err error
-	for {
-		<-t
-		err = engine.Ping()
-		if err != nil {
-			logger.Infof("database ping: %s", err)
-		}
+	if strings.ContainsAny(s.Db.Prefix, "`\" ;.-/\\") {
+		return nil, fmt.Errorf("表前缀无效")
 	}
+	path := s.Db.Database
+	if path == "" {
+		path = "data/gocron.db"
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(app.AppDir, path)
+	}
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err = file.Close(); err != nil {
+		return nil, err
+	}
+	u := url.URL{Scheme: "file", Path: path}
+	q := url.Values{"_busy_timeout": {"10000"}, "_journal_mode": {"WAL"}, "_synchronous": {"FULL"}, "_foreign_keys": {"on"}, "_txlock": {"immediate"}}
+	u.RawQuery = q.Encode()
+	engine, err := xorm.NewEngine("sqlite3", u.String())
+	if err != nil {
+		return nil, err
+	}
+	engine.SetMaxOpenConns(1)
+	engine.SetMaxIdleConns(1)
+	if s.Db.Prefix != "" {
+		engine.SetTableMapper(names.NewPrefixMapper(names.SnakeMapper{}, s.Db.Prefix))
+	}
+	if err = engine.Ping(); err != nil {
+		engine.Close()
+		return nil, err
+	}
+	return engine, nil
 }

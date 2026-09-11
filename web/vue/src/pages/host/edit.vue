@@ -18,7 +18,7 @@
           <el-input
             type="textarea"
             :rows="5"
-            size="medium"
+            size="default"
             width="100"
             v-model="form.remark">
           </el-input>

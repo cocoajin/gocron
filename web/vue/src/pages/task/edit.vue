@@ -115,7 +115,7 @@
               <el-input
                 type="textarea"
                 :rows="5"
-                size="medium"
+                size="default"
                 width="100"
                 :placeholder="commandPlaceholder"
                 v-model="form.command">
@@ -237,7 +237,7 @@
               <el-input
                 type="textarea"
                 :rows="3"
-                size="medium"
+                size="default"
                 width="100"
                 v-model="form.remark">
               </el-input>
@@ -254,7 +254,7 @@
 </template>
 
 <script>
-import taskSidebar from './sidebar'
+import taskSidebar from './sidebar.vue'
 import taskService from '../../api/task'
 import notificationService from '../../api/notification'
 

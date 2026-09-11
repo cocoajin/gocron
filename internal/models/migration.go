@@ -5,35 +5,68 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/go-xorm/xorm"
 	"github.com/ouqiang/gocron/internal/modules/logger"
+	"xorm.io/xorm"
 )
 
 type Migration struct{}
 
 // 首次安装, 创建数据库表
 func (migration *Migration) Install(dbName string) error {
-	setting := new(Setting)
-	task := new(Task)
-	tables := []interface{}{
-		&User{}, task, &TaskLog{}, &Host{}, setting, &LoginLog{}, &TaskHost{},
-	}
-	for _, table := range tables {
-		exist, err := Db.IsTableExist(table)
-		if exist {
-			return errors.New("数据表已存在")
-		}
-		if err != nil {
-			return err
-		}
-		err = Db.Sync2(table)
-		if err != nil {
-			return err
-		}
-	}
-	setting.InitBasicField()
+	return migration.InstallAdmin(nil)
+}
 
-	return nil
+// InstallAdmin creates schema, defaults and administrator in one transaction.
+func (migration *Migration) InstallAdmin(admin *User) error {
+	session := Db.NewSession()
+	defer session.Close()
+	if err := session.Begin(); err != nil {
+		return err
+	}
+	defer session.Rollback()
+	tables := []interface{}{&User{}, &Task{}, &TaskLog{}, &Host{}, &Setting{}, &LoginLog{}, &TaskHost{}}
+	for _, table := range tables {
+		exists, err := session.IsTableExist(table)
+		if err != nil {
+			return err
+		}
+		if exists {
+			return errors.New("数据表已存在，请使用原安装配置启动")
+		}
+		if err = session.CreateTable(table); err != nil {
+			return err
+		}
+		if err = session.CreateIndexes(table); err != nil {
+			return err
+		}
+		if err = session.CreateUniques(table); err != nil {
+			return err
+		}
+	}
+	defaults := []Setting{
+		{Code: SlackCode, Key: SlackUrlKey}, {Code: SlackCode, Key: SlackTemplateKey, Value: slackTemplate},
+		{Code: MailCode, Key: MailServerKey}, {Code: MailCode, Key: MailTemplateKey, Value: emailTemplate},
+		{Code: WebhookCode, Key: WebhookUrlKey}, {Code: WebhookCode, Key: WebhookTemplateKey, Value: webhookTemplate},
+	}
+	if _, err := session.Insert(&defaults); err != nil {
+		return err
+	}
+	if admin != nil {
+		admin.Status = Enabled
+		admin.Salt = ""
+		var err error
+		admin.Password, err = hashPassword(admin.Password)
+		if err != nil {
+			return err
+		}
+		if _, err := session.Insert(admin); err != nil {
+			return err
+		}
+	}
+	if _, err := session.Exec("CREATE UNIQUE INDEX IF NOT EXISTS " + Db.Quote(TablePrefix+"user_email_nonempty") + " ON " + Db.Quote(TablePrefix+"user") + " (email) WHERE email <> ''"); err != nil {
+		return err
+	}
+	return session.Commit()
 }
 
 // 迭代升级数据库, 新建表、新增字段等
@@ -71,6 +104,7 @@ func (migration *Migration) Upgrade(oldVersionId int) {
 	}
 
 	session := Db.NewSession()
+	defer session.Close()
 	err := session.Begin()
 	if err != nil {
 		logger.Fatalf("开启事务失败-%s", err.Error())
@@ -234,4 +268,30 @@ func (m *Migration) upgradeFor150(session *xorm.Session) error {
 	logger.Info("已升级到v1.5\n")
 
 	return nil
+}
+
+// UpgradeSQLiteAccounts preserves existing users while allowing empty email fields.
+func UpgradeSQLiteAccounts() error {
+	table := TablePrefix + "user"
+	indexes, err := Db.Query("PRAGMA index_list(" + Db.Quote(table) + ")")
+	if err != nil {
+		return err
+	}
+	for _, index := range indexes {
+		name := string(index["name"])
+		if string(index["unique"]) != "1" || name == TablePrefix+"user_email_nonempty" {
+			continue
+		}
+		columns, err := Db.Query("PRAGMA index_info(" + Db.Quote(name) + ")")
+		if err != nil {
+			return err
+		}
+		if len(columns) == 1 && string(columns[0]["name"]) == "email" {
+			if _, err = Db.Exec("DROP INDEX " + Db.Quote(name)); err != nil {
+				return err
+			}
+		}
+	}
+	_, err = Db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS " + Db.Quote(TablePrefix+"user_email_nonempty") + " ON " + Db.Quote(table) + " (email) WHERE email <> ''")
+	return err
 }

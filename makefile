@@ -47,21 +47,20 @@ package-all: build-vue statik
 
 .PHONY: build-vue
 build-vue:
-	cd web/vue && yarn run build
+	cd web/vue && npm run build
 	cp -r web/vue/dist/* web/public/
 
 .PHONY: install-vue
 install-vue:
-	cd web/vue && yarn install
+	cd web/vue && npm ci --ignore-scripts
 
 .PHONY: run-vue
 run-vue:
-	cd web/vue && yarn run dev
+	cd web/vue && npm run dev
 
 .PHONY: statik
 statik:
-	go get github.com/rakyll/statik
-	go generate ./...
+	go run github.com/rakyll/statik -src=web/vue/dist -dest=internal -f
 
 .PHONY: lint
 	golangci-lint run
@@ -70,3 +69,7 @@ statik:
 clean:
 	rm bin/gocron
 	rm bin/gocron-node
+
+.PHONY: package-macos
+package-macos:
+	./scripts/package-macos.sh

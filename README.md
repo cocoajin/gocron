@@ -1,3 +1,17 @@
+# GoCron SQLite · macOS
+
+本分支将 GoCron 改为 SQLite 单机存储，升级 Vue 3 + Element Plus、JWT v5、gRPC 和 xorm；保留原有任务、主机、日志、用户及通知管理功能。
+
+支持账号密码登录，邮箱选填，密码仅要求非空，无长度门槛。新密码采用 Argon2id，兼容旧 MD5 用户登录后自动升级。
+
+**安装、数据目录、构建步骤和本次验证范围见 [使用说明](README-SQLite.md)。**
+
+macOS arm64 安装包由 `scripts/package-macos.sh` 生成到 `dist/`，不包含数据库或管理员账号。首次启动在浏览器创建管理员。
+
+---
+
+以下为原项目文档（历史部署及依赖说明以本分支使用说明为准）。
+
 # gocron - 定时任务管理系统
 [![Downloads](https://img.shields.io/github/downloads/ouqiang/gocron/total.svg)](https://github.com/ouqiang/gocron/releases)
 [![license](https://img.shields.io/github/license/mashape/apistatus.svg?maxAge=2592000)](https://github.com/ouqiang/gocron/blob/master/LICENSE)

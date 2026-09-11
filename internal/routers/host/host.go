@@ -73,7 +73,7 @@ type HostForm struct {
 	Id     int16
 	Name   string `binding:"Required;MaxSize(64)"`
 	Alias  string `binding:"Required;MaxSize(32)"`
-	Port   int    `binding:"Required;Range(1-65535)"`
+	Port   int    `binding:"Required;Range(1,65535)"`
 	Remark string
 }
 

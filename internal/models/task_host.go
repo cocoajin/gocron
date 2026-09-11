@@ -29,20 +29,25 @@ func (th *TaskHost) Remove(taskId int) error {
 
 func (th *TaskHost) Add(taskId int, hostIds []int) error {
 
-	err := th.Remove(taskId)
-	if err != nil {
+	session := Db.NewSession()
+	defer session.Close()
+	if err := session.Begin(); err != nil {
 		return err
 	}
-
-	taskHosts := make([]TaskHost, len(hostIds))
-	for i, value := range hostIds {
-		taskHosts[i].TaskId = taskId
-		taskHosts[i].HostId = int16(value)
+	defer session.Rollback()
+	if _, err := session.Where("task_id = ?", taskId).Delete(new(TaskHost)); err != nil {
+		return err
 	}
-
-	_, err = Db.Insert(&taskHosts)
-
-	return err
+	if len(hostIds) > 0 {
+		taskHosts := make([]TaskHost, len(hostIds))
+		for i, id := range hostIds {
+			taskHosts[i] = TaskHost{TaskId: taskId, HostId: int16(id)}
+		}
+		if _, err := session.Insert(&taskHosts); err != nil {
+			return err
+		}
+	}
+	return session.Commit()
 }
 
 func (th *TaskHost) GetHostIdsByTaskId(taskId int) ([]TaskHostDetail, error) {

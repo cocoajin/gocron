@@ -56,7 +56,7 @@
         ref="table"
         style="width: 100%">
         <el-table-column type="expand">
-          <template slot-scope="scope">
+          <template #default="scope">
             <el-form label-position="left">
               <el-form-item>
                   重试次数: {{scope.row.retry_times}} <br>
@@ -87,22 +87,22 @@
         <el-table-column
           label="任务节点"
           width="150">
-          <template slot-scope="scope">
-            <div v-html="scope.row.hostname">{{scope.row.hostname}}</div>
+          <template #default="scope">
+            <div style="white-space: pre-line">{{(scope.row.hostname || "").replace(/<br\s*\/?\s*>/gi, "\n")}}</div>
           </template>
         </el-table-column>
         <el-table-column
           label="执行时长"
           width="250">
-          <template slot-scope="scope">
+          <template #default="scope">
             执行时长: {{scope.row.total_time > 0 ? scope.row.total_time : 1}}秒<br>
-            开始时间: {{scope.row.start_time | formatTime}}<br>
-            <span v-if="scope.row.status !== 1">结束时间: {{scope.row.end_time | formatTime}}</span>
+            开始时间: {{$formatTime(scope.row.start_time)}}<br>
+            <span v-if="scope.row.status !== 1">结束时间: {{$formatTime(scope.row.end_time)}}</span>
           </template>
         </el-table-column>
         <el-table-column
           label="状态">
-          <template slot-scope="scope">
+          <template #default="scope">
             <span style="color:red" v-if="scope.row.status === 0">失败</span>
             <span style="color:green" v-else-if="scope.row.status === 1">执行中</span>
             <span v-else-if="scope.row.status === 2">成功</span>
@@ -112,7 +112,7 @@
         <el-table-column
           label="执行结果"
           width="120" v-if="this.isAdmin">
-          <template slot-scope="scope">
+          <template #default="scope">
             <el-button type="success"
                        v-if="scope.row.status === 2"
                        @click="showTaskResult(scope.row)">查看结果</el-button>
@@ -128,7 +128,7 @@
         <el-table-column
           label="执行结果"
           width="120" v-else>
-          <template slot-scope="scope">
+          <template #default="scope">
             <el-button type="success"
                        v-if="scope.row.status === 2"
                        @click="showTaskResult(scope.row)">查看结果</el-button>
@@ -138,7 +138,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-dialog title="任务执行结果" :visible.sync="dialogVisible">
+      <el-dialog title="任务执行结果" v-model="dialogVisible">
         <div>
           <pre>{{currentTaskResult.command}}</pre>
         </div>
@@ -151,7 +151,7 @@
 </template>
 
 <script>
-import taskSidebar from '../task/sidebar'
+import taskSidebar from '../task/sidebar.vue'
 import taskLogService from '../../api/taskLog'
 
 export default {

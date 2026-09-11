@@ -57,7 +57,7 @@
       </el-form>
       <el-dialog
         title=""
-        :visible.sync="dialogVisible"
+        v-model="dialogVisible"
         width="30%">
         <el-form :model="form">
           <el-form-item label="用户名" >
@@ -76,8 +76,8 @@
 </template>
 
 <script>
-import systemSidebar from '../sidebar'
-import notificationTab from './tab'
+import systemSidebar from '../sidebar.vue'
+import notificationTab from './tab.vue'
 import notificationService from '../../../api/notification'
 export default {
   name: 'notification-email',

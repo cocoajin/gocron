@@ -1,9 +1,11 @@
+//go:build !windows
 // +build !windows
 
 package utils
 
 import (
-	"errors"
+	"bytes"
+	"fmt"
 	"os/exec"
 	"syscall"
 
@@ -21,18 +23,23 @@ func ExecShell(ctx context.Context, command string) (string, error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setpgid: true,
 	}
-	resultChan := make(chan Result)
-	go func() {
-		output, err := cmd.CombinedOutput()
-		resultChan <- Result{string(output), err}
-	}()
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
 	select {
 	case <-ctx.Done():
-		if cmd.Process.Pid > 0 {
-			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		}
-		return "", errors.New("timeout killed")
-	case result := <-resultChan:
-		return result.output, result.err
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		<-done
+		return output.String(), fmt.Errorf("任务取消或超时: %w", ctx.Err())
+	case err := <-done:
+		return output.String(), err
 	}
 }

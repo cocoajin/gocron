@@ -1,34 +1,33 @@
-import Vue from 'vue'
-import Router from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import store from '../store/index'
-import NotFound from '../components/common/notFound'
+import NotFound from '../components/common/notFound.vue'
 
-import TaskList from '../pages/task/list'
-import TaskEdit from '../pages/task/edit'
-import TaskLog from '../pages/taskLog/list'
+import TaskList from '../pages/task/list.vue'
+import TaskEdit from '../pages/task/edit.vue'
+import TaskLog from '../pages/taskLog/list.vue'
 
-import HostList from '../pages/host/list'
-import HostEdit from '../pages/host/edit'
+import HostList from '../pages/host/list.vue'
+import HostEdit from '../pages/host/edit.vue'
 
-import UserList from '../pages/user/list'
-import UserEdit from '../pages/user/edit'
-import UserLogin from '../pages/user/login'
-import UserEditPassword from '../pages/user/editPassword'
-import UserEditMyPassword from '../pages/user/editMyPassword'
+import UserList from '../pages/user/list.vue'
+import UserEdit from '../pages/user/edit.vue'
+import UserLogin from '../pages/user/login.vue'
+import UserEditPassword from '../pages/user/editPassword.vue'
+import UserEditMyPassword from '../pages/user/editMyPassword.vue'
 
-import NotificationEmail from '../pages/system/notification/email'
-import NotificationSlack from '../pages/system/notification/slack'
-import NotificationWebhook from '../pages/system/notification/webhook'
+import NotificationEmail from '../pages/system/notification/email.vue'
+import NotificationSlack from '../pages/system/notification/slack.vue'
+import NotificationWebhook from '../pages/system/notification/webhook.vue'
 
-import Install from '../pages/install/index'
-import LoginLog from '../pages/system/loginLog'
+import Install from '../pages/install/index.vue'
+import LoginLog from '../pages/system/loginLog.vue'
 
-Vue.use(Router)
 
-const router = new Router({
+const router = createRouter({
+  history: createWebHashHistory(),
   routes: [
     {
-      path: '*',
+      path: '/:pathMatch(.*)*',
       component: NotFound,
       meta: {
         noLogin: true,

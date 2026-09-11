@@ -42,6 +42,12 @@ func InitEnv(versionString string) {
 	if err != nil {
 		logger.Fatal(err)
 	}
+	if dataDir := os.Getenv("GOCRON_DATA_DIR"); dataDir != "" {
+		AppDir, err = filepath.Abs(dataDir)
+		if err != nil {
+			logger.Fatal(err)
+		}
+	}
 	ConfDir = filepath.Join(AppDir, "/conf")
 	LogDir = filepath.Join(AppDir, "/log")
 	AppConfig = filepath.Join(ConfDir, "/app.ini")
@@ -63,7 +69,7 @@ func IsInstalled() bool {
 
 // CreateInstallLock 创建安装锁文件
 func CreateInstallLock() error {
-	_, err := os.Create(filepath.Join(ConfDir, "/install.lock"))
+	err := os.WriteFile(filepath.Join(ConfDir, "install.lock"), []byte("installed\n"), 0600)
 	if err != nil {
 		logger.Error("创建安装锁文件conf/install.lock失败")
 	}
@@ -124,7 +130,7 @@ func createDirIfNotExists(path ...string) {
 		if utils.FileExist(value) {
 			continue
 		}
-		err := os.Mkdir(value, 0755)
+		err := os.MkdirAll(value, 0700)
 		if err != nil {
 			logger.Fatal(fmt.Sprintf("创建目录失败:%s", err.Error()))
 		}

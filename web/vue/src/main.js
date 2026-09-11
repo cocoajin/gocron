@@ -1,33 +1,20 @@
-// The Vue build version to load with the `import` command
-// (runtime-only or standalone) has been set in webpack.base.conf with an alias.
-import Vue from 'vue'
-import ElementUI from 'element-ui'
-import 'element-ui/lib/theme-chalk/index.css'
-import App from './App'
+import { createApp } from 'vue'
+import ElementPlus from 'element-plus'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import 'element-plus/dist/index.css'
+import App from './App.vue'
 import router from './router'
 import store from './store/index'
-
-Vue.config.productionTip = false
-Vue.use(ElementUI)
-
-Vue.directive('focus', {
-  inserted: function (el) {
-    // 聚焦元素
-    el.focus()
-  }
-})
-
-Vue.prototype.$appConfirm = function (callback) {
-  this.$confirm('确定执行此操作?', '提示', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(() => {
-    callback()
-  })
+const app = createApp(App)
+app.use(ElementPlus, { locale: zhCn, size: 'default' })
+app.use(router)
+app.use(store)
+app.directive('focus', { mounted: el => el.focus() })
+app.config.globalProperties.$appConfirm = function (callback) {
+ this.$confirm('确定执行此操作?', '提示', { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' })
+ .then(() => callback()).catch(() => {})
 }
-
-Vue.filter('formatTime', function (time) {
+app.config.globalProperties.$formatTime = function (time) {
   const fillZero = function (num) {
     return num >= 10 ? num : '0' + num
   }
@@ -45,13 +32,6 @@ Vue.filter('formatTime', function (time) {
   }
 
   return result
-})
+}
 
-/* eslint-disable no-new */
-new Vue({
-  el: '#app',
-  router,
-  store,
-  components: { App },
-  template: '<App/>'
-})
+app.mount('#app')

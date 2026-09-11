@@ -1,7 +1,7 @@
 package models
 
 import (
-	"github.com/go-xorm/xorm"
+	"xorm.io/xorm"
 )
 
 // 主机
@@ -36,11 +36,11 @@ func (host *Host) Update(id int, data CommonMap) (int64, error) {
 
 // 删除
 func (host *Host) Delete(id int) (int64, error) {
-	return Db.Id(id).Delete(new(Host))
+	return Db.ID(id).Delete(new(Host))
 }
 
 func (host *Host) Find(id int) error {
-	_, err := Db.Id(id).Get(host)
+	_, err := Db.ID(id).Get(host)
 
 	return err
 }
@@ -74,6 +74,7 @@ func (host *Host) AllList() ([]Host, error) {
 
 func (host *Host) Total(params CommonMap) (int64, error) {
 	session := Db.NewSession()
+	defer session.Close()
 	host.parseWhere(session, params)
 	return session.Count(host)
 }

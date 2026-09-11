@@ -2,6 +2,7 @@ package setting
 
 import (
 	"errors"
+	"os"
 
 	"github.com/ouqiang/gocron/internal/modules/logger"
 	"github.com/ouqiang/gocron/internal/modules/utils"
@@ -48,16 +49,16 @@ func Read(filename string) (*Setting, error) {
 
 	var s Setting
 
-	s.Db.Engine = section.Key("db.engine").MustString("mysql")
+	s.Db.Engine = section.Key("db.engine").MustString("sqlite3")
 	s.Db.Host = section.Key("db.host").MustString("127.0.0.1")
 	s.Db.Port = section.Key("db.port").MustInt(3306)
 	s.Db.User = section.Key("db.user").MustString("")
 	s.Db.Password = section.Key("db.password").MustString("")
-	s.Db.Database = section.Key("db.database").MustString("gocron")
+	s.Db.Database = section.Key("db.database").MustString("data/gocron.db")
 	s.Db.Prefix = section.Key("db.prefix").MustString("")
 	s.Db.Charset = section.Key("db.charset").MustString("utf8")
-	s.Db.MaxIdleConns = section.Key("db.max.idle.conns").MustInt(30)
-	s.Db.MaxOpenConns = section.Key("db.max.open.conns").MustInt(100)
+	s.Db.MaxIdleConns = section.Key("db.max.idle.conns").MustInt(1)
+	s.Db.MaxOpenConns = section.Key("db.max.open.conns").MustInt(1)
 
 	s.AllowIps = section.Key("allow_ips").MustString("")
 	s.AppName = section.Key("app.name").MustString("定时任务管理系统")
@@ -65,6 +66,9 @@ func Read(filename string) (*Setting, error) {
 	s.ApiSecret = section.Key("api.secret").MustString("")
 	s.ApiSignEnable = section.Key("api.sign.enable").MustBool(true)
 	s.ConcurrencyQueue = section.Key("concurrency.queue").MustInt(500)
+	if s.ConcurrencyQueue <= 0 {
+		return nil, errors.New("concurrency.queue 必须大于 0")
+	}
 	s.AuthSecret = section.Key("auth_secret").MustString("")
 	if s.AuthSecret == "" {
 		s.AuthSecret = utils.RandAuthToken()
@@ -115,6 +119,9 @@ func Write(config []string, filename string) error {
 		i += 2
 	}
 	err = file.SaveTo(filename)
+	if err == nil {
+		err = os.Chmod(filename, 0600)
+	}
 
 	return err
 }

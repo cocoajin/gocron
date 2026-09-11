@@ -1,15 +1,12 @@
 package install
 
 import (
-	"errors"
 	"fmt"
-	"strconv"
+	"sync"
 
 	macaron "gopkg.in/macaron.v1"
 
 	"github.com/go-macaron/binding"
-	"github.com/go-sql-driver/mysql"
-	"github.com/lib/pq"
 	"github.com/ouqiang/gocron/internal/models"
 	"github.com/ouqiang/gocron/internal/modules/app"
 	"github.com/ouqiang/gocron/internal/modules/setting"
@@ -20,17 +17,11 @@ import (
 // 系统安装
 
 type InstallForm struct {
-	DbType               string `binding:"In(mysql,postgres)"`
-	DbHost               string `binding:"Required;MaxSize(50)"`
-	DbPort               int    `binding:"Required;Range(1,65535)"`
-	DbUsername           string `binding:"Required;MaxSize(50)"`
-	DbPassword           string `binding:"Required;MaxSize(30)"`
-	DbName               string `binding:"Required;MaxSize(50)"`
-	DbTablePrefix        string `binding:"MaxSize(20)"`
-	AdminUsername        string `binding:"Required;MinSize(3)"`
-	AdminPassword        string `binding:"Required;MinSize(6)"`
-	ConfirmAdminPassword string `binding:"Required;MinSize(6)"`
-	AdminEmail           string `binding:"Required;Email;MaxSize(50)"`
+	DbType               string `binding:"In(sqlite,sqlite3)"`
+	AdminUsername        string `binding:"Required;MaxSize(32)"`
+	AdminPassword        string `binding:"Required"`
+	ConfirmAdminPassword string `binding:"Required"`
+	AdminEmail           string `binding:"MaxSize(50)"`
 }
 
 func (f InstallForm) Error(ctx *macaron.Context, errs binding.Errors) {
@@ -42,8 +33,12 @@ func (f InstallForm) Error(ctx *macaron.Context, errs binding.Errors) {
 	ctx.Write([]byte(content))
 }
 
+var installMu sync.Mutex
+
 // 安装
 func Store(ctx *macaron.Context, form InstallForm) string {
+	installMu.Lock()
+	defer installMu.Unlock()
 	json := utils.JsonResponse{}
 	if app.Installed {
 		return json.CommonFailure("系统已安装!")
@@ -68,17 +63,16 @@ func Store(ctx *macaron.Context, form InstallForm) string {
 	app.Setting = appConfig
 
 	models.Db = models.CreateDb()
+	defer func() {
+		if !app.Installed {
+			models.Db.Close()
+		}
+	}()
 	// 创建数据库表
 	migration := new(models.Migration)
-	err = migration.Install(form.DbName)
+	err = migration.InstallAdmin(&models.User{Name: form.AdminUsername, Password: form.AdminPassword, Email: form.AdminEmail, IsAdmin: 1})
 	if err != nil {
 		return json.CommonFailure(fmt.Sprintf("创建数据库表失败-%s", err.Error()), err)
-	}
-
-	// 创建管理员账号
-	err = createAdminUser(form)
-	if err != nil {
-		return json.CommonFailure("创建管理员账号失败", err)
 	}
 
 	// 创建安装锁
@@ -100,16 +94,10 @@ func Store(ctx *macaron.Context, form InstallForm) string {
 // 配置写入文件
 func writeConfig(form InstallForm) error {
 	dbConfig := []string{
-		"db.engine", form.DbType,
-		"db.host", form.DbHost,
-		"db.port", strconv.Itoa(form.DbPort),
-		"db.user", form.DbUsername,
-		"db.password", form.DbPassword,
-		"db.database", form.DbName,
-		"db.prefix", form.DbTablePrefix,
-		"db.charset", "utf8",
-		"db.max.idle.conns", "5",
-		"db.max.open.conns", "100",
+		"db.engine", "sqlite3",
+		"db.database", "data/gocron.db",
+		"db.max.idle.conns", "1",
+		"db.max.open.conns", "1",
 		"allow_ips", "",
 		"app.name", "定时任务管理系统", // 应用名称
 		"api.key", "",
@@ -125,50 +113,14 @@ func writeConfig(form InstallForm) error {
 	return setting.Write(dbConfig, app.AppConfig)
 }
 
-// 创建管理员账号
-func createAdminUser(form InstallForm) error {
-	user := new(models.User)
-	user.Name = form.AdminUsername
-	user.Password = form.AdminPassword
-	user.Email = form.AdminEmail
-	user.IsAdmin = 1
-	_, err := user.Create()
-
-	return err
-}
-
 // 测试数据库连接
 func testDbConnection(form InstallForm) error {
 	var s setting.Setting
-	s.Db.Engine = form.DbType
-	s.Db.Host = form.DbHost
-	s.Db.Port = form.DbPort
-	s.Db.User = form.DbUsername
-	s.Db.Password = form.DbPassword
-	s.Db.Database = form.DbName
-	s.Db.Charset = "utf8"
+	s.Db.Engine = "sqlite3"
+	s.Db.Database = "data/gocron.db"
 	db, err := models.CreateTmpDb(&s)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
-	err = db.Ping()
-	if s.Db.Engine == "postgres" && err != nil {
-		pgError, ok := err.(*pq.Error)
-		if ok && pgError.Code == "3D000" {
-			err = errors.New("数据库不存在")
-		}
-		return err
-	}
-
-	if s.Db.Engine == "mysql" && err != nil {
-		mysqlError, ok := err.(*mysql.MySQLError)
-		if ok && mysqlError.Number == 1049 {
-			err = errors.New("数据库不存在")
-		}
-		return err
-	}
-
-	return err
-
+	return db.Close()
 }

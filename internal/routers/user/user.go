@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/ouqiang/gocron/internal/models"
 	"github.com/ouqiang/gocron/internal/modules/app"
 	"github.com/ouqiang/gocron/internal/modules/logger"
@@ -22,7 +22,7 @@ type UserForm struct {
 	Name            string `binding:"Required;MaxSize(32)"` // 用户名
 	Password        string // 密码
 	ConfirmPassword string // 确认密码
-	Email           string `binding:"Required;MaxSize(50)"` // 邮箱
+	Email           string `binding:"MaxSize(50)"` // 邮箱
 	IsAdmin         int8   // 是否是管理员 1:管理员 0:普通用户
 	Status          models.Status
 }
@@ -76,8 +76,6 @@ func Detail(ctx *macaron.Context) string {
 func Store(ctx *macaron.Context, form UserForm) string {
 	form.Name = strings.TrimSpace(form.Name)
 	form.Email = strings.TrimSpace(form.Email)
-	form.Password = strings.TrimSpace(form.Password)
-	form.ConfirmPassword = strings.TrimSpace(form.ConfirmPassword)
 	json := utils.JsonResponse{}
 	userModel := models.User{}
 	nameExists, err := userModel.UsernameExists(form.Name, form.Id)
@@ -175,8 +173,8 @@ func changeStatus(ctx *macaron.Context, status models.Status) string {
 // UpdatePassword 更新密码
 func UpdatePassword(ctx *macaron.Context) string {
 	id := ctx.ParamsInt(":id")
-	newPassword := ctx.QueryTrim("new_password")
-	confirmNewPassword := ctx.QueryTrim("confirm_new_password")
+	newPassword := ctx.Query("new_password")
+	confirmNewPassword := ctx.Query("confirm_new_password")
 	json := utils.JsonResponse{}
 	if newPassword == "" || confirmNewPassword == "" {
 		return json.CommonFailure("请输入密码")
@@ -195,9 +193,9 @@ func UpdatePassword(ctx *macaron.Context) string {
 
 // UpdateMyPassword 更新我的密码
 func UpdateMyPassword(ctx *macaron.Context) string {
-	oldPassword := ctx.QueryTrim("old_password")
-	newPassword := ctx.QueryTrim("new_password")
-	confirmNewPassword := ctx.QueryTrim("confirm_new_password")
+	oldPassword := ctx.Query("old_password")
+	newPassword := ctx.Query("new_password")
+	confirmNewPassword := ctx.Query("confirm_new_password")
 	json := utils.JsonResponse{}
 	if oldPassword == "" || newPassword == "" || confirmNewPassword == "" {
 		return json.CommonFailure("原密码和新密码均不能为空")
@@ -223,7 +221,7 @@ func UpdateMyPassword(ctx *macaron.Context) string {
 // ValidateLogin 验证用户登录
 func ValidateLogin(ctx *macaron.Context) string {
 	username := ctx.QueryTrim("username")
-	password := ctx.QueryTrim("password")
+	password := ctx.Query("password")
 	json := utils.JsonResponse{}
 	if username == "" || password == "" {
 		return json.CommonFailure("用户名、密码不能为空")
@@ -305,7 +303,7 @@ func generateToken(user *models.User) (string, error) {
 	claims["exp"] = time.Now().Add(tokenDuration).Unix()
 	claims["uid"] = user.Id
 	claims["iat"] = time.Now().Unix()
-	claims["issuer"] = "gocron"
+	claims["iss"] = "gocron"
 	claims["username"] = user.Name
 	claims["is_admin"] = user.IsAdmin
 	token.Claims = claims
@@ -321,18 +319,30 @@ func RestoreToken(ctx *macaron.Context) error {
 	}
 	token, err := jwt.Parse(authToken, func(*jwt.Token) (interface{}, error) {
 		return []byte(app.Setting.AuthSecret), nil
-	})
+	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithIssuer("gocron"), jwt.WithExpirationRequired())
 	if err != nil {
 		return err
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
+	if !ok || !token.Valid {
 		return errors.New("invalid claims")
 	}
-	ctx.Data["uid"] = int(claims["uid"].(float64))
-	ctx.Data["username"] = claims["username"]
-	ctx.Data["is_admin"] = int(claims["is_admin"].(float64))
+	uid, ok := claims["uid"].(float64)
+	if !ok || uid <= 0 {
+		return errors.New("invalid uid")
+	}
+	// Refresh status and privileges so disabled/deleted users cannot keep using a token.
+	current := new(models.User)
+	if err := current.Find(int(uid)); err != nil {
+		return err
+	}
+	if current.Id == 0 || current.Status != models.Enabled {
+		return errors.New("account disabled")
+	}
+	ctx.Data["uid"] = current.Id
+	ctx.Data["username"] = current.Name
+	ctx.Data["is_admin"] = int(current.IsAdmin)
 
 	return nil
 }

@@ -81,15 +81,10 @@ type Instance struct {
 	m sync.Map
 }
 
-// 是否有任务处于运行中
-func (i *Instance) has(key int) bool {
-	_, ok := i.m.Load(key)
-
-	return ok
-}
-
-func (i *Instance) add(key int) {
-	i.m.Store(key, struct{}{})
+// tryStart atomically claims a single-instance task.
+func (i *Instance) tryStart(key int) bool {
+	_, loaded := i.m.LoadOrStore(key, struct{}{})
+	return !loaded
 }
 
 func (i *Instance) done(key int) {
@@ -110,7 +105,8 @@ func (task Task) Initialize() {
 	serviceCron.Start()
 	concurrencyQueue = ConcurrencyQueue{queue: make(chan struct{}, app.Setting.ConcurrencyQueue)}
 	taskCount = TaskCount{sync.WaitGroup{}, make(chan struct{})}
-	go taskCount.Wait()
+	taskCount.Add()
+	go func() { taskCount.wg.Wait(); close(taskCount.exit) }()
 
 	logger.Info("开始初始化定时任务")
 	taskModel := new(models.Task)
@@ -202,7 +198,9 @@ func (task Task) WaitAndExit() {
 
 // 直接运行任务
 func (task Task) Run(taskModel models.Task) {
-	go createJob(taskModel)()
+	if job := createJob(taskModel); job != nil {
+		go job()
+	}
 }
 
 type Handler interface {
@@ -325,14 +323,16 @@ func createJob(taskModel models.Task) cron.FuncJob {
 		taskCount.Add()
 		defer taskCount.Done()
 
+		if taskModel.Multi == 0 {
+			if !runInstance.tryStart(taskModel.Id) {
+				createTaskLog(taskModel, models.Cancel)
+				return
+			}
+			defer runInstance.done(taskModel.Id)
+		}
 		taskLogId := beforeExecJob(taskModel)
 		if taskLogId <= 0 {
 			return
-		}
-
-		if taskModel.Multi == 0 {
-			runInstance.add(taskModel.Id)
-			defer runInstance.done(taskModel.Id)
 		}
 
 		concurrencyQueue.Add()
@@ -361,10 +361,6 @@ func createHandler(taskModel models.Task) Handler {
 
 // 任务前置操作
 func beforeExecJob(taskModel models.Task) (taskLogId int64) {
-	if taskModel.Multi == 0 && runInstance.has(taskModel.Id) {
-		createTaskLog(taskModel, models.Cancel)
-		return
-	}
 	taskLogId, err := createTaskLog(taskModel, models.Running)
 	if err != nil {
 		logger.Error("任务开始执行#写入任务日志失败-", err)
@@ -456,30 +452,32 @@ func SendNotification(taskModel models.Task, taskResult TaskResult) {
 		"output":           taskResult.Result,
 		"status":           statusName,
 		"task_id":          taskModel.Id,
-		"remark":  			taskModel.Remark,
+		"remark":           taskModel.Remark,
 	}
 	notify.Push(msg)
 }
 
 // 执行具体任务
-func execJob(handler Handler, taskModel models.Task, taskUniqueId int64) TaskResult {
+func execJob(handler Handler, taskModel models.Task, taskUniqueId int64) (result TaskResult) {
 	defer func() {
 		if err := recover(); err != nil {
 			logger.Error("panic#service/task.go:execJob#", err)
+			result.Err = fmt.Errorf("任务执行异常: %v", err)
+			result.Result = result.Err.Error()
 		}
 	}()
 	// 默认只运行任务一次
-	var execTimes int8 = 1
+	var execTimes int = 1
 	if taskModel.RetryTimes > 0 {
-		execTimes += taskModel.RetryTimes
+		execTimes += int(taskModel.RetryTimes)
 	}
-	var i int8 = 0
+	var i int = 0
 	var output string
 	var err error
 	for i < execTimes {
 		output, err = handler.Run(taskModel, taskUniqueId)
 		if err == nil {
-			return TaskResult{Result: output, Err: err, RetryTimes: i}
+			return TaskResult{Result: output, Err: err, RetryTimes: int8(i)}
 		}
 		i++
 		if i < execTimes {

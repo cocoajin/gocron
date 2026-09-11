@@ -55,6 +55,7 @@ func Register(m *macaron.Macaron) {
 			return
 		}
 
+		defer file.Close()
 		io.Copy(ctx.Resp, file)
 
 	})

@@ -43,7 +43,7 @@
         </el-table-column>
         <el-table-column
           label="状态">
-          <template slot-scope="scope">
+          <template #default="scope">
             <el-switch
               v-model="scope.row.status"
               :active-value="1"
@@ -55,7 +55,7 @@
           </template>
         </el-table-column>
         <el-table-column label="操作" width="300" v-if="this.isAdmin">
-          <template slot-scope="scope">
+          <template #default="scope">
             <el-row>
               <el-button type="primary" @click="toEdit(scope.row)">编辑</el-button>
               <el-button type="success" @click="editPassword(scope.row)">修改密码</el-button>

@@ -55,44 +55,6 @@ const (
 	WebhookUrlKey      = "url"
 )
 
-// 初始化基本字段 邮件、slack等
-func (setting *Setting) InitBasicField() {
-	setting.Code = SlackCode
-	setting.Key = SlackUrlKey
-	setting.Value = ""
-	Db.Insert(setting)
-	setting.Id = 0
-
-	setting.Code = SlackCode
-	setting.Key = SlackTemplateKey
-	setting.Value = slackTemplate
-	Db.Insert(setting)
-	setting.Id = 0
-
-	setting.Code = MailCode
-	setting.Key = MailServerKey
-	setting.Value = ""
-	Db.Insert(setting)
-	setting.Id = 0
-
-	setting.Code = MailCode
-	setting.Key = MailTemplateKey
-	setting.Value = emailTemplate
-	Db.Insert(setting)
-	setting.Id = 0
-
-	setting.Code = WebhookCode
-	setting.Key = WebhookTemplateKey
-	setting.Value = webhookTemplate
-	Db.Insert(setting)
-	setting.Id = 0
-
-	setting.Code = WebhookCode
-	setting.Key = WebhookUrlKey
-	setting.Value = ""
-	Db.Insert(setting)
-}
-
 // region slack配置
 
 type Slack struct {
@@ -135,14 +97,7 @@ func (setting *Setting) formatSlack(list []Setting, slack *Slack) {
 }
 
 func (setting *Setting) UpdateSlack(url, template string) error {
-	setting.Value = url
-
-	Db.Cols("value").Update(setting, Setting{Code: SlackCode, Key: SlackUrlKey})
-
-	setting.Value = template
-	Db.Cols("value").Update(setting, Setting{Code: SlackCode, Key: SlackTemplateKey})
-
-	return nil
+	return updateSettings(SlackCode, map[string]string{SlackUrlKey: url, SlackTemplateKey: template})
 }
 
 // 创建slack渠道
@@ -221,13 +176,7 @@ func (setting *Setting) formatMail(list []Setting, mail *Mail) {
 }
 
 func (setting *Setting) UpdateMail(config, template string) error {
-	setting.Value = config
-	Db.Cols("value").Update(setting, Setting{Code: MailCode, Key: MailServerKey})
-
-	setting.Value = template
-	Db.Cols("value").Update(setting, Setting{Code: MailCode, Key: MailTemplateKey})
-
-	return nil
+	return updateSettings(MailCode, map[string]string{MailServerKey: config, MailTemplateKey: template})
 }
 
 func (setting *Setting) CreateMailUser(username, email string) (int64, error) {
@@ -281,14 +230,23 @@ func (setting *Setting) formatWebhook(list []Setting, webHook *WebHook) {
 }
 
 func (setting *Setting) UpdateWebHook(url, template string) error {
-	setting.Value = url
-
-	Db.Cols("value").Update(setting, Setting{Code: WebhookCode, Key: WebhookUrlKey})
-
-	setting.Value = template
-	Db.Cols("value").Update(setting, Setting{Code: WebhookCode, Key: WebhookTemplateKey})
-
-	return nil
+	return updateSettings(WebhookCode, map[string]string{WebhookUrlKey: url, WebhookTemplateKey: template})
 }
 
 // endregion
+
+// Notification settings must either all be saved or all remain unchanged.
+func updateSettings(code string, values map[string]string) error {
+	session := Db.NewSession()
+	defer session.Close()
+	if err := session.Begin(); err != nil {
+		return err
+	}
+	defer session.Rollback()
+	for key, value := range values {
+		if _, err := session.Where("code = ? AND `key` = ?", code, key).Cols("value").Update(&Setting{Value: value}); err != nil {
+			return err
+		}
+	}
+	return session.Commit()
+}

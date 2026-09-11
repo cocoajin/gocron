@@ -8,7 +8,7 @@
         <el-form-item label="用户名" prop="name">
           <el-input v-model="form.name"></el-input>
         </el-form-item>
-        <el-form-item label="邮箱" prop="email">
+        <el-form-item label="邮箱（选填）" prop="email">
           <el-input v-model="form.email"></el-input>
         </el-form-item>
         <template v-if="!form.id">
@@ -21,14 +21,14 @@
         </template>
         <el-form-item label="角色" prop="is_admin">
           <el-radio-group v-model="form.is_admin">
-            <el-radio :label="0">普通用户</el-radio>
-            <el-radio :label="1">管理员</el-radio>
+            <el-radio :value="0">普通用户</el-radio>
+            <el-radio :value="1">管理员</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item label="状态" prop="status">
           <el-radio-group v-model="form.status">
-            <el-radio :label="1">启用</el-radio>
-            <el-radio :label="0">禁用</el-radio>
+            <el-radio :value="1">启用</el-radio>
+            <el-radio :value="0">禁用</el-radio>
           </el-radio-group>
         </el-form-item>
         <el-form-item>
@@ -60,7 +60,7 @@ export default {
           {required: true, message: '请输入用户名', trigger: 'blur'}
         ],
         email: [
-          {type: 'email', required: true, message: '请输入有效邮箱地址', trigger: 'blur'}
+          {type: 'email', message: '请输入有效邮箱或留空', trigger: 'blur'}
         ],
         password: [
           {required: true, message: '请输入密码', trigger: 'blur'}

@@ -1,5 +1,5 @@
 // Command gocron
-//go:generate statik -src=../../web/public -dest=../../internal -f
+//go:generate statik -src=../../web/vue/dist -dest=../../internal -f
 
 package main
 
@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	AppVersion           = "1.5"
+	AppVersion           = "2.0"
 	BuildDate, GitCommit string
 )
 
@@ -101,6 +101,9 @@ func initModule() {
 
 	// 初始化DB
 	models.Db = models.CreateDb()
+	if err := models.UpgradeSQLiteAccounts(); err != nil {
+		logger.Fatal("升级账户结构失败", err)
+	}
 
 	// 版本升级
 	upgradeIfNeed()
