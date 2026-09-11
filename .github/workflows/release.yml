@@ -1,0 +1,136 @@
+name: Build and publish release
+
+on:
+  push:
+    tags:
+      - '[0-9]*.[0-9]*.[0-9]*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  frontend:
+    name: Build embedded management UI
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          test "$REF_TYPE" = tag || { echo 'Run this workflow from a version tag.'; exit 1; }
+          test "$RELEASE_TAG" = "$(tr -d '\r\n' < VERSION)"
+          node -e 'const fs=require("fs"); const v=fs.readFileSync("VERSION","utf8").trim(); if(!/^\d+\.\d+\.\d+$/.test(v)||require("./web/vue/package.json").version!==v) process.exit(1)'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/vue/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build UI and embed assets
+        run: |
+          cd web/vue
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+          cd ../..
+          go run github.com/rakyll/statik -src=web/vue/dist -dest=internal -f
+          gofmt -w internal/statik/statik.go
+      - uses: actions/upload-artifact@v4
+        with:
+          name: embedded-ui
+          path: internal/statik/statik.go
+          if-no-files-found: error
+          retention-days: 7
+
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: frontend
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            goos: linux
+            goarch: amd64
+            cc: gcc
+          - runner: ubuntu-22.04-arm
+            goos: linux
+            goarch: arm64
+            cc: gcc
+          - runner: ubuntu-22.04
+            goos: windows
+            goarch: amd64
+            cc: x86_64-w64-mingw32-gcc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          name: embedded-ui
+          path: internal/statik
+      - name: Install Windows cross compiler
+        if: matrix.goos == 'windows'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y gcc-mingw-w64-x86-64
+      - name: Compile and archive
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: ./scripts/build-release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Generate checksums
+        working-directory: release-assets
+        run: sha256sum *.tar.gz *.zip > SHA256SUMS
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            if [ -f "docs/releases/$RELEASE_TAG.md" ]; then
+              gh release create "$RELEASE_TAG" --verify-tag --draft --title "GoCron $RELEASE_TAG" --notes-file "docs/releases/$RELEASE_TAG.md"
+            else
+              gh release create "$RELEASE_TAG" --verify-tag --draft --title "GoCron $RELEASE_TAG" --generate-notes
+            fi
+          fi
+          gh release upload "$RELEASE_TAG" release-assets/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest

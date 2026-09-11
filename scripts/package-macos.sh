@@ -14,7 +14,7 @@ DEST="dist/gocron-sqlite-darwin-$ARCH"
 APP="$DEST/GoCron.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" bin
 go build -trimpath -o bin/gocron ./cmd/gocron
-go build -trimpath -ldflags '-X main.AppVersion=2.0' -o bin/gocron-node ./cmd/node
+go build -trimpath -ldflags '-X main.AppVersion=2.0.0' -o bin/gocron-node ./cmd/node
 cp bin/gocron bin/gocron-node scripts/start.command "$APP/Contents/Resources/"
 cat > "$APP/Contents/MacOS/GoCron" <<'LAUNCH'
 #!/bin/bash

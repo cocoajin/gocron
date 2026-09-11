@@ -43,7 +43,7 @@ package: build-vue statik
 
 .PHONY: package-all
 package-all: build-vue statik
-	bash ./package.sh -p 'linux darwin windows'
+	@echo "Multi-platform releases are built by .github/workflows/release.yml after pushing a version tag."
 
 .PHONY: build-vue
 build-vue:
